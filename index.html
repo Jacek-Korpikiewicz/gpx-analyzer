@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="google-site-verification" content="wIeZFtFe_1Q8GdsnfXkLWOznvNMhNSicO0z9iuphmaY" />
+<title>PunchyAF — Find the kickers hiding in your route</title>
+<meta name="description" content="Free GPX route analyzer that finds every kicker, punch, and steep ramp. Categorize climbs (HC to Cat 4), export to Wahoo, plan your ride.">
+<meta property="og:title" content="PunchyAF — Find the kickers hiding in your route">
+<meta property="og:description" content="Upload a GPX and see every punch that'll hurt. Climb categorization, kicker detection, Wahoo export. Free.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://punchyaf.pages.dev">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="PunchyAF">
+<meta name="twitter:description" content="Find the kickers that'll drop you before you ride.">
+<link rel="canonical" href="https://punchyaf.pages.dev">
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"WebApplication","name":"PunchyAF","url":"https://punchyaf.pages.dev","description":"Free GPX route analyzer that finds every kicker, punch, and steep ramp. Categorize climbs (HC to Cat 4), export to Wahoo.","applicationCategory":"SportsApplication","operatingSystem":"Any","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"browserRequirements":"Requires JavaScript"}
+</script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter+Tight:wght@500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!-- Landing -->
+<div id="landing">
+ <h1 class="landing-title">Every climb,<br>every kicker,<br><span class="accent">quantified.</span></h1>
+ <p class="landing-hook">Drop a .gpx file. We'll find the climbs your watch missed, the kickers that wrecked you, and the gradients you lied about on the group ride.</p>
+ <p class="landing-sub">$ ./punchyaf --analyze</p>
+ <div class="drop-zone" id="dropZone">
+  <svg fill="none" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"/></svg>
+  <p>Drop GPX file here or click to browse</p>
+  <input type="file" id="fileInput" accept=".gpx">
+ </div>
+ <button class="btn btn-ghost" id="demoBtn">Try Demo — Sudovia RIDE100 (102km, 1500m+)</button>
+</div>
+
+<!-- App -->
+<div id="app">
+ <div class="header">
+  <span class="route-name" id="routeName"><span class="punchy">punchy</span>AF / gpx_analyzer</span>
+  <button id="settingsBtn" title="Settings"><svg fill="none" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.24-.438.613-.431.992a6.759 6.759 0 010 .255c-.007.378.138.75.43.99l1.005.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 010-.255c.007-.378-.138-.75-.43-.99l-1.004-.828a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.281z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg></button>
+  <button id="exportBtn" title="Export"><svg fill="none" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"/></svg></button>
+ </div>
+ <div class="main-content">
+  <div id="settings-left">
+   <div>
+    <h3>CLIMB_DETECT</h3>
+    <div class="slider-group"><div class="slider-label"><span>Min Gradient</span><input type="number" class="slider-num" id="climbGradVal2" value="3.5" min="0.5" max="10" step="0.1">%</div><input type="range" id="climbGrad2" min="0.5" max="10" step="0.1" value="3.5"></div>
+    <div class="slider-group"><div class="slider-label"><span>Min Length</span><input type="number" class="slider-num" id="climbLenVal2" value="400" min="50" max="2000" step="25">m</div><input type="range" id="climbLen2" min="50" max="2000" step="25" value="400"></div>
+   </div>
+   <div>
+    <h3>KICKER_FLAG</h3>
+    <div class="slider-group"><div class="slider-label"><span>Min Gradient</span><input type="number" class="slider-num" id="ascentGradVal2" value="7" min="3" max="20" step="0.1">%</div><input type="range" id="ascentGrad2" min="3" max="20" step="0.1" value="7"></div>
+    <div class="slider-group"><div class="slider-label"><span>Min Length</span><input type="number" class="slider-num" id="ascentLenVal2" value="80" min="10" max="500" step="5">m</div><input type="range" id="ascentLen2" min="10" max="500" step="5" value="80"></div>
+   </div>
+   <div>
+    <h3>COLOR_MODE</h3>
+    <div class="toggle-group">
+     <label class="toggle-option"><input type="radio" name="colorMode" value="casual" checked> <span>Casual</span><span class="toggle-desc">0–5 / 5–8 / 8%+</span></label>
+     <label class="toggle-option"><input type="radio" name="colorMode" value="pro"> <span>Pro</span><span class="toggle-desc">HC / Cat 1–4</span></label>
+    </div>
+   </div>
+   <div style="margin-top:auto">
+    <button class="btn btn-sm btn-ghost" style="width:100%;margin-bottom:6px" id="resetDefaults2">Reset Defaults</button>
+    <button class="btn btn-sm btn-ghost" style="width:100%;font-size:11px;color:var(--text-dim)" id="resetAll2">Clear All</button>
+   </div>
+  </div>
+  <div id="map-container">
+   <div id="map"></div>
+   <div class="crosshair-banner" id="crosshairBanner" style="display:none">Click on route to place marker · ESC to cancel</div>
+  </div>
+  <div id="panel">
+   <div class="panel-handle"></div>
+   <div class="section">
+    <div class="section-title">Route Summary</div>
+    <div class="stat-cards">
+     <div class="stat-card"><div class="value" id="statDist">0</div><div class="label">Distance (km)</div></div>
+     <div class="stat-card"><div class="value" id="statGain">0</div><div class="label">Elevation Gain (m)</div></div>
+     <div class="stat-card"><div class="value" id="statClimbGain">0</div><div class="label">In Climbs <span id="statClimbPct"></span></div></div>
+     <div class="stat-card"><div class="value" id="statKickerGain">0</div><div class="label">In Kickers <span id="statKickerPct"></span></div></div>
+    </div>
+   </div>
+   <div class="section">
+    <div class="section-title">Elevation Profile</div>
+    <div class="chart-wrap ns-scan"><canvas id="elevChart" style="width:100%;height:100%"></canvas></div>
+   </div>
+   <div class="section">
+    <div class="export-bar">
+     <span class="export-hint">Export climbs, kickers &amp; markers to your bike computer</span>
+     <button class="btn btn-sm btn-primary" id="exportPanelBtn" style="padding:5px 12px;font-size:11px;white-space:nowrap">Export GPX</button>
+    </div>
+   </div>
+   <div class="section">
+    <div class="tabs">
+     <button class="tab active" data-tab="climbs">Climbs</button>
+     <button class="tab" data-tab="ascents">Kickers</button>
+     <button class="tab" data-tab="markers">Markers</button>
+    </div>
+    <div class="tab-content active" id="tabClimbs">
+     <div class="climb-list" id="climbList"></div>
+    </div>
+    <div class="tab-content" id="tabAscents">
+     <div class="ascent-list" id="ascentList"></div>
+    </div>
+    <div class="tab-content" id="tabMarkers">
+     <div style="display:flex;justify-content:flex-end;margin-bottom:8px"><button class="btn btn-sm btn-primary" id="addMarkerPanelBtn" style="padding:4px 10px;font-size:11px">+ Add</button></div>
+    <div class="marker-add-panel" id="markerAddPanel" style="display:none;background:var(--card);border:1px solid var(--border);padding:12px;margin-bottom:10px">
+     <div style="display:flex;gap:8px;margin-bottom:8px">
+      <select id="markerTypePanelSelect" style="flex:1;font-size:12px"><option value="Feed Zone">🍌 Feed Zone</option><option value="Coffee Stop">☕ Coffee Stop</option><option value="Regroup">🤝 Regroup</option><option value="Sprint">⚡ Sprint</option><option value="Photo">📷 Photo</option><option value="Danger">⚠️ Danger</option><option value="Custom">📍 Custom</option></select>
+      <input type="number" id="markerKmPanelInput" placeholder="km" step="0.1" min="0" style="width:70px;font-size:12px">
+     </div>
+     <div style="display:flex;gap:8px">
+      <button class="btn btn-sm btn-primary" id="markerPanelConfirm" style="flex:1;font-size:11px">Place at km</button>
+      <button class="btn btn-sm btn-ghost" id="markerPanelMapClick" style="flex:1;font-size:11px">Click on map</button>
+     </div>
+    </div>
+    <div class="marker-list" id="markerList"></div>
+    </div>
+   </div>
+  </div>
+ </div>
+</div>
+
+<!-- Settings -->
+<div id="settings-overlay"></div>
+<div id="settings-drawer">
+ <div class="settings-header"><h2>Settings</h2><button id="closeSettings"><svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg></button></div>
+ <div class="settings-section">
+  <h3>Climb Detection</h3>
+  <div class="slider-group"><div class="slider-label"><span>Min Gradient</span><input type="number" class="slider-num" id="climbGradVal" value="3.5" min="0.5" max="10" step="0.1">%</div><input type="range" id="climbGrad" min="0.5" max="10" step="0.1" value="3.5"></div>
+  <div class="slider-group"><div class="slider-label"><span>Min Length</span><input type="number" class="slider-num" id="climbLenVal" value="400" min="50" max="2000" step="25">m</div><input type="range" id="climbLen" min="50" max="2000" step="25" value="400"></div>
+ </div>
+ <div class="settings-section">
+  <h3>Kicker Detection</h3>
+  <div class="slider-group"><div class="slider-label"><span>Min Gradient</span><input type="number" class="slider-num" id="ascentGradVal" value="7" min="3" max="20" step="0.1">%</div><input type="range" id="ascentGrad" min="3" max="20" step="0.1" value="7"></div>
+  <div class="slider-group"><div class="slider-label"><span>Min Length</span><input type="number" class="slider-num" id="ascentLenVal" value="80" min="10" max="500" step="5">m</div><input type="range" id="ascentLen" min="10" max="500" step="5" value="80"></div>
+ </div>
+ <div class="settings-section">
+  <h3>Custom Markers</h3>
+  <div class="marker-add-row">
+   <input type="number" id="markerKmInput" placeholder="km" step="0.1" min="0">
+   <select id="markerTypeSelect"><option value="Feed Zone">Feed Zone</option><option value="Coffee Stop">Coffee Stop</option><option value="Regroup">Regroup</option><option value="Sprint">Sprint</option><option value="Photo">Photo</option><option value="Danger">Danger</option><option value="Custom">Custom</option></select>
+   <button class="btn btn-sm btn-primary" id="addMarkerKm">Add</button>
+  </div>
+  <button class="btn btn-sm btn-ghost" style="margin-top:10px;width:100%" id="addMarkerMap">Add by Map Click</button>
+  <button class="btn btn-sm btn-ghost" style="margin-top:8px;width:100%" id="importMarkersBtn">Import Markers (JSON)</button>
+  <input type="file" id="importMarkersFile" accept=".json" style="display:none">
+ </div>
+ <div class="settings-section">
+  <button class="btn btn-sm btn-ghost" style="width:100%;margin-bottom:8px" id="resetDefaults">Reset to Defaults</button>
+  <button class="btn btn-sm btn-danger" style="width:100%" id="resetAll">Reset All (Clear &amp; Return to Start)</button>
+ </div>
+</div>
+
+<!-- Export Modal -->
+<div id="export-modal">
+ <div class="modal-content">
+  <h2>Export</h2>
+  <div class="modal-btns">
+   <button class="btn btn-primary" id="exportGpx">Export GPX (with waypoints)</button>
+   <button class="btn btn-ghost" id="exportJson">Export Markers (JSON)</button>
+   <button class="btn btn-ghost" id="closeExport">Cancel</button>
+  </div>
+ </div>
+</div>
+
+<!-- Marker picker -->
+<div id="marker-picker">
+ <button data-type="Feed Zone">🍌 Feed Zone</button>
+ <button data-type="Coffee Stop">☕ Coffee Stop</button>
+ <button data-type="Regroup">🤝 Regroup</button>
+ <button data-type="Sprint">⚡ Sprint</button>
+ <button data-type="Photo">📷 Photo</button>
+ <button data-type="Danger">⚠️ Danger</button>
+ <button data-type="Custom">📍 Custom</button>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<script src="app.js"></script>
+<footer style="position:fixed;bottom:0;left:0;right:0;height:28px;background:var(--bg);border-top:1px solid var(--border);display:flex;align-items:center;justify-content:center;gap:12px;font-size:10px;color:var(--text-mute);z-index:10000;letter-spacing:0.08em;text-transform:uppercase">
+ <span>built by Jacek</span>
+ <span style="color:var(--border-hi)">&middot;</span>
+ <a href="https://ko-fi.com/jacekkor" target="_blank" style="color:var(--accent);text-decoration:none">☕ buy me a coffee</a>
+ <span style="color:var(--border-hi)">&middot;</span>
+ <span>no account · no upload</span>
+</footer>
+</body>
+</html>
