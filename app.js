@@ -74,11 +74,13 @@ function smoothElevations(pts, w=5){
  });
 }
 
+let _toastTimer=null;
 function toast(msg, warn=false){
  const t=document.getElementById('toast');
  t.textContent=msg;
  t.className='toast'+(warn?' warn':'')+' show';
- setTimeout(()=>t.classList.remove('show'),3000);
+ if(_toastTimer) clearTimeout(_toastTimer);
+ _toastTimer=setTimeout(()=>{t.classList.remove('show');_toastTimer=null;},3000);
 }
 
 // GPX Parsing
@@ -255,6 +257,7 @@ function renderClimbsOnMap(){
   const latlngs=state.trackPoints.slice(c.startIdx,c.endIdx+1).map(p=>[p.lat,p.lon]);
   const layer=L.polyline(latlngs,{color:col,weight:5,opacity:0.9,interactive:true}).addTo(map);
   layer.bindTooltip('Climb '+(i+1)+catLabel+' — '+(c.length/1000).toFixed(1)+'km · '+c.grad.toFixed(1)+'% · +'+Math.round(c.gain)+'m',{sticky:true,direction:'top',offset:[0,-12],className:'route-tooltip'});
+  (function(ci){layer.on('mouseover',()=>highlightFeature('climb',ci));layer.on('mouseout',()=>clearHighlight());})(i);
   climbLayers.push(layer);
   const icon=L.divIcon({className:'',html:'<div style="width:24px;height:24px;background:'+col+';border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#000;box-shadow:0 0 6px '+col+'80;border:2px solid rgba(255,255,255,0.3)">'+(i+1)+'</div>',iconSize:[24,24],iconAnchor:[12,12]});
   const marker=L.marker(latlngs[0],{icon}).addTo(map);
@@ -270,8 +273,9 @@ function renderAscentsOnMap(){
  ascentLayers=[];
  state.ascents.forEach((a,i)=>{
   const latlngs=state.trackPoints.slice(a.startIdx,a.endIdx+1).map(p=>[p.lat,p.lon]);
-  const layer=L.polyline(latlngs,{color:'#ff3366',weight:6,opacity:0.9,dashArray:'8 6',interactive:true}).addTo(map);
+  const layer=L.polyline(latlngs,{color:'#ffb05a',weight:6,opacity:0.9,dashArray:'8 6',interactive:true}).addTo(map);
   layer.bindTooltip('Kicker '+(i+1)+' — '+Math.round(a.length)+'m · '+a.grad.toFixed(1)+'% · +'+Math.round(a.gain)+'m',{sticky:true,direction:'top',offset:[0,-12],className:'route-tooltip'});
+  (function(ki){layer.on('mouseover',()=>highlightFeature('kicker',ki));layer.on('mouseout',()=>clearHighlight());})(i);
   ascentLayers.push(layer);
   // Numbered marker
   const icon=L.divIcon({className:'',html:'<div style="width:20px;height:20px;background:#ff3366;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#fff;box-shadow:0 0 6px rgba(255,51,102,0.5);border:1.5px solid rgba(255,255,255,0.3)">'+(i+1)+'</div>',iconSize:[20,20],iconAnchor:[10,10]});
@@ -295,24 +299,171 @@ function renderMarkersOnMap(){
 }
 
 // Chart
+const climbBandsPlugin={
+ id:'climbBands',
+ beforeDraw(chart){
+  if(!state.trackPoints.length) return;
+  const ctx=chart.ctx;
+  const xScale=chart.scales.x;
+  const yScale=chart.scales.y;
+  const totalPts=state.trackPoints.length;
+  const sam=window._chartSampled||[];
+  function distToChartIdx(dist){
+   for(let j=0;j<sam.length;j++){if(sam[j].dist>=dist) return j;}
+   return sam.length-1;
+  }
+  // Draw climb bands
+  if(state.climbs) state.climbs.forEach((c,i)=>{
+   const x1=xScale.getPixelForValue(distToChartIdx(c.startDist));
+   const x2=xScale.getPixelForValue(distToChartIdx(c.startDist+c.length));
+   const col=climbColorHex(c.grad,c.length);
+   const isHi=_highlighted&&_highlighted.type==='climb'&&_highlighted.idx===i;
+   ctx.fillStyle=col+(isHi?'40':'18');
+   ctx.fillRect(x1,yScale.top,x2-x1,yScale.bottom-yScale.top);
+   ctx.strokeStyle=col;
+   ctx.lineWidth=isHi?3:1.5;
+   ctx.beginPath();ctx.moveTo(x1,yScale.bottom);ctx.lineTo(x2,yScale.bottom);ctx.stroke();
+   if(isHi){ctx.beginPath();ctx.moveTo(x1,yScale.top);ctx.lineTo(x2,yScale.top);ctx.stroke();}
+  });
+  // Draw kicker bands
+  if(state.ascents) state.ascents.forEach((a,i)=>{
+   const x1=xScale.getPixelForValue(distToChartIdx(a.startDist));
+   const x2=xScale.getPixelForValue(distToChartIdx(a.startDist+a.length));
+   const isHi=_highlighted&&_highlighted.type==='kicker'&&_highlighted.idx===i;
+   ctx.fillStyle=isHi?'rgba(255,176,90,0.35)':'rgba(255,176,90,0.2)';
+   ctx.fillRect(x1,yScale.top,x2-x1,yScale.bottom-yScale.top);
+   ctx.strokeStyle='#ffb05a';
+   ctx.lineWidth=isHi?3:2;
+   ctx.beginPath();ctx.moveTo(x1,yScale.top);ctx.lineTo(x2,yScale.top);ctx.stroke();
+   if(isHi){ctx.beginPath();ctx.moveTo(x1,yScale.bottom);ctx.lineTo(x2,yScale.bottom);ctx.stroke();}
+  });
+ }
+};
+
 function renderChart(){
  const ctx=document.getElementById('elevChart').getContext('2d');
  const pts=state.trackPoints;
- const labels=pts.map(p=>(p.dist/1000).toFixed(1));
- const data=pts.map(p=>p.ele);
+ // Downsample to ~500 points for performance
+ const step=Math.max(1,Math.floor(pts.length/500));
+ const sampled=pts.filter((_,i)=>i%step===0||i===pts.length-1);
+ // Store index mapping for band lookups
+ window._chartSampled=sampled;
+ window._chartStep=step;
+ const labels=sampled.map(p=>(p.dist/1000).toFixed(1));
+ const data=sampled.map(p=>p.ele);
  if(chart) chart.destroy();
  chart=new Chart(ctx,{
   type:'line',
-  data:{labels,datasets:[{data,fill:true,borderColor:'#00d4ff',backgroundColor:'rgba(0,212,255,0.1)',borderWidth:1.5,pointRadius:0,tension:0.1}]},
+  data:{labels,datasets:[{
+   data,fill:true,
+   borderColor:'#c8ff5a',
+   backgroundColor:function(ctx){
+    const g=ctx.chart.ctx.createLinearGradient(0,0,0,ctx.chart.height);
+    g.addColorStop(0,'rgba(200,255,90,0.15)');
+    g.addColorStop(1,'rgba(200,255,90,0.01)');
+    return g;
+   },
+   borderWidth:1.5,pointRadius:0,tension:0.3
+  }]},
+  plugins:[climbBandsPlugin],
   options:{
    responsive:true,maintainAspectRatio:false,
-   plugins:{legend:{display:false},tooltip:{mode:'index',intersect:false,callbacks:{title:items=>`${items[0].label} km`,label:item=>`${Math.round(item.raw)} m`}}},
-   scales:{x:{display:true,title:{display:false},ticks:{maxTicksLimit:8,font:{size:10},color:'#8b8fa3'},grid:{color:'rgba(42,45,58,0.5)'}},y:{title:{display:false},ticks:{font:{size:10},color:'#8b8fa3'},grid:{color:'rgba(42,45,58,0.5)'}},},
-   interaction:{mode:'index',intersect:false}
+   plugins:{legend:{display:false},tooltip:{
+    backgroundColor:'#161a14',borderColor:'#2d3424',borderWidth:1,
+    titleFont:{size:10,family:'JetBrains Mono'},bodyFont:{size:11,family:'JetBrains Mono',weight:'bold'},
+    titleColor:'#7a7f6e',bodyColor:'#c8ff5a',padding:8,displayColors:false,
+    callbacks:{title:items=>`km ${items[0].label}`,label:item=>`${Math.round(item.raw)} m`}
+   }},
+   scales:{
+    x:{display:true,ticks:{maxTicksLimit:10,font:{size:9,family:'JetBrains Mono'},color:'#4a4f42'},grid:{color:'rgba(31,36,24,0.4)',lineWidth:1}},
+    y:{ticks:{font:{size:9,family:'JetBrains Mono'},color:'#4a4f42',maxTicksLimit:6},grid:{color:'rgba(31,36,24,0.4)',lineWidth:1}}
+   },
+   interaction:{mode:'index',intersect:false},
+   onHover:function(event,elements){
+    if(elements.length>0){
+     const idx=elements[0].index;
+     const sam=window._chartSampled||state.trackPoints;
+     if(idx>=0&&idx<sam.length){
+      const p=sam[idx];
+      // Scrub marker on map
+      if(!window._scrubMarker){
+       const icon=L.divIcon({className:'',html:'<div style="width:10px;height:10px;background:#c8ff5a;border:2px solid #fff;border-radius:50%;box-shadow:0 0 12px rgba(200,255,90,0.8)"></div>',iconSize:[10,10],iconAnchor:[5,5]});
+       window._scrubMarker=L.marker([p.lat,p.lon],{icon,interactive:false,zIndexOffset:9999}).addTo(map);
+      } else {
+       window._scrubMarker.setLatLng([p.lat,p.lon]);
+       window._scrubMarker.setOpacity(1);
+      }
+      // Check if cursor is over a kicker or climb band (kickers first — they're shorter and overlap)
+      const curDist=p.dist;
+      let found=false;
+      if(state.ascents) for(let ki=0;ki<state.ascents.length;ki++){
+       const a=state.ascents[ki];
+       if(curDist>=a.startDist&&curDist<=a.startDist+a.length){highlightFeature('kicker',ki);found=true;break;}
+      }
+      if(!found&&state.climbs) for(let ci=0;ci<state.climbs.length;ci++){
+       const c=state.climbs[ci];
+       if(curDist>=c.startDist&&curDist<=c.startDist+c.length){highlightFeature('climb',ci);found=true;break;}
+      }
+      if(!found) clearHighlight();
+     }
+    } else {
+     if(window._scrubMarker) window._scrubMarker.setOpacity(0);
+     clearHighlight();
+    }
+   }
   }
  });
 }
 
+
+// ── Unified highlight system ──
+// type: 'climb' or 'kicker', idx: index in state.climbs/ascents
+let _highlighted=null;
+
+function highlightFeature(type, idx){
+ if(_highlighted && _highlighted.type===type && _highlighted.idx===idx) return;
+ clearHighlight();
+ _highlighted={type,idx};
+ const item=type==='climb'?state.climbs[idx]:state.ascents[idx];
+ if(!item) return;
+
+ // 1. Map: thicken the polyline
+ const layers=type==='climb'?climbLayers:ascentLayers;
+ const layer=layers[idx*2];
+ if(layer&&layer.setStyle){
+  if(type==='climb') layer.setStyle({weight:9,opacity:1});
+  else layer.setStyle({weight:10,opacity:1});
+ }
+
+ // 2. List: highlight the row
+ const listId=type==='climb'?'climbList':'ascentList';
+ const rows=document.getElementById(listId).querySelectorAll(type==='climb'?'.climb-item':'.ascent-item');
+ if(rows[idx]) rows[idx].classList.add('highlighted');
+
+ // 3. Chart: redraw with highlighted band (store which is highlighted, plugin reads it)
+ if(chart) chart.update('none');
+}
+
+function clearHighlight(){
+ if(!_highlighted) return;
+ const {type,idx}=_highlighted;
+
+ // Map: restore
+ const layers=type==='climb'?climbLayers:ascentLayers;
+ const layer=layers[idx*2];
+ if(layer&&layer.setStyle){
+  if(type==='climb') layer.setStyle({weight:5,opacity:0.9});
+  else layer.setStyle({weight:6,opacity:0.9,dashArray:'8 6'});
+ }
+
+ // List: unhighlight
+ const listId=type==='climb'?'climbList':'ascentList';
+ const rows=document.getElementById(listId).querySelectorAll(type==='climb'?'.climb-item':'.ascent-item');
+ if(rows[idx]) rows[idx].classList.remove('highlighted');
+
+ _highlighted=null;
+ if(chart) chart.update('none');
+}
 
 // Panel rendering
 function renderPanel(){
@@ -343,10 +494,14 @@ function renderClimbList(){
   const col=climbColorHex(c.grad, c.length);
   const cat=categorizeClimb(c.length,c.grad);
   const badge=(mode==='pro'&&cat.cat)?`<span class="cat-badge" style="color:${cat.badge.split(';')[1].replace('color:','')};border-color:${cat.badge.split(';')[1].replace('color:','')}">${cat.cat}</span>`:'';
+  const startEle=Math.round(state.trackPoints[c.startIdx].ele);
+  const endEle=Math.round(state.trackPoints[c.endIdx].ele);
+  const lenStr=c.length>=1000?(c.length/1000).toFixed(1)+'km':Math.round(c.length)+'m';
   return `<div class="climb-item" data-idx="${i}" style="border-left:3px solid ${col};background:transparent">
+   <div class="grad-big" style="color:${col}">${lenStr}</div>
    <div class="climb-info">
-    <div class="climb-name" style="color:${col}">Climb ${i+1} ${badge}</div>
-    <div class="climb-stats">${(c.length/1000).toFixed(1)} km · ${c.grad.toFixed(1)}% · +${Math.round(c.gain)}m</div>
+    <div class="climb-name" style="color:${col}">Climb ${i+1} @ ${c.grad.toFixed(1)}% ${badge}</div>
+    <div class="climb-stats">P: ${(c.startDist/1000).toFixed(1)}km · C: +${Math.round(c.gain)}m</div>
    </div>
   </div>`;}).join('');
  el.querySelectorAll('.climb-item').forEach(item=>{
@@ -356,27 +511,24 @@ function renderClimbList(){
    const latlngs=state.trackPoints.slice(c.startIdx,c.endIdx+1).map(p=>[p.lat,p.lon]);
    map.fitBounds(L.latLngBounds(latlngs),{padding:[40,40]});
   });
-  item.addEventListener('mouseenter',()=>{
-   const layer=climbLayers[idx*2]; // polyline is at even indices, marker at odd
-   if(layer&&layer.setStyle) layer.setStyle({weight:9,opacity:1});
-  });
-  item.addEventListener('mouseleave',()=>{
-   const layer=climbLayers[idx*2];
-   if(layer&&layer.setStyle) layer.setStyle({weight:5,opacity:0.9});
-  });
+  item.addEventListener('mouseenter',()=>highlightFeature('climb',idx));
+  item.addEventListener('mouseleave',()=>clearHighlight());
  });
 }
 
 function renderAscentList(){
  const el=document.getElementById('ascentList');
  if(!state.ascents.length){el.innerHTML='<div class="empty-state">No kickers detected</div>';return;}
- el.innerHTML=state.ascents.map((a,i)=>`
-  <div class="ascent-item" data-idx="${i}" style="border-left:3px solid #ffb05a;background:transparent">
-   <div class="ascent-info">
+ el.innerHTML=state.ascents.map((a,i)=>{
+  const barPct=Math.min(100,a.grad/12*100);
+  return `<div class="ascent-item" data-idx="${i}" style="border-left:3px solid #ffb05a;background:transparent">
+   <div class="grad-big" style="color:#ffb05a">${a.grad.toFixed(1)}%</div>
+   <div class="ascent-info" style="flex:1">
     <div class="ascent-name" style="color:#ffb05a">Kicker ${i+1}</div>
-    <div class="ascent-stats">${Math.round(a.length)}m · ${a.grad.toFixed(1)}% · +${Math.round(a.gain)}m</div>
+    <div class="ascent-stats">P: ${(a.startDist/1000).toFixed(1)}km · L: ${Math.round(a.length)}m · C: +${Math.round(a.gain)}m</div>
+    <div class="diff-bar"><div class="diff-bar-fill" style="width:${barPct}%;background:#ffb05a"></div></div>
    </div>
-  </div>`).join('');
+  </div>`;}).join('');
  el.querySelectorAll('.ascent-item').forEach(item=>{
   const idx=parseInt(item.dataset.idx);
   item.addEventListener('click',()=>{
@@ -384,14 +536,8 @@ function renderAscentList(){
    const latlngs=state.trackPoints.slice(a.startIdx,a.endIdx+1).map(p=>[p.lat,p.lon]);
    map.fitBounds(L.latLngBounds(latlngs),{padding:[40,40]});
   });
-  item.addEventListener('mouseenter',()=>{
-   const layer=ascentLayers[idx*2];
-   if(layer&&layer.setStyle) layer.setStyle({weight:10,opacity:1});
-  });
-  item.addEventListener('mouseleave',()=>{
-   const layer=ascentLayers[idx*2];
-   if(layer&&layer.setStyle) layer.setStyle({weight:6,opacity:0.9,dashArray:'8 6'});
-  });
+  item.addEventListener('mouseenter',()=>highlightFeature('kicker',idx));
+  item.addEventListener('mouseleave',()=>clearHighlight());
  });
 }
 

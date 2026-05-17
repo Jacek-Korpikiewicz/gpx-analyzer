@@ -9,13 +9,13 @@
 <meta property="og:title" content="PunchyAF — Find the kickers hiding in your route">
 <meta property="og:description" content="Upload a GPX and see every punch that'll hurt. Climb categorization, kicker detection, Wahoo export. Free.">
 <meta property="og:type" content="website">
-<meta property="og:url" content="https://punchyaf.pages.dev">
+<meta property="og:url" content="https://punchyaf.cc">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="PunchyAF">
 <meta name="twitter:description" content="Find the kickers that'll drop you before you ride.">
-<link rel="canonical" href="https://punchyaf.pages.dev">
+<link rel="canonical" href="https://punchyaf.cc">
 <script type="application/ld+json">
-{"@context":"https://schema.org","@type":"WebApplication","name":"PunchyAF","url":"https://punchyaf.pages.dev","description":"Free GPX route analyzer that finds every kicker, punch, and steep ramp. Categorize climbs (HC to Cat 4), export to Wahoo.","applicationCategory":"SportsApplication","operatingSystem":"Any","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"browserRequirements":"Requires JavaScript"}
+{"@context":"https://schema.org","@type":"WebApplication","name":"PunchyAF","url":"https://punchyaf.cc","description":"Free GPX route analyzer that finds every kicker, punch, and steep ramp. Categorize climbs (HC to Cat 4), export to Wahoo.","applicationCategory":"SportsApplication","operatingSystem":"Any","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"browserRequirements":"Requires JavaScript"}
 </script>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter+Tight:wght@500;600;700;800&display=swap" rel="stylesheet">
@@ -69,9 +69,14 @@
     <button class="btn btn-sm btn-ghost" style="width:100%;font-size:11px;color:var(--text-dim)" id="resetAll2">Clear All</button>
    </div>
   </div>
-  <div id="map-container">
-   <div id="map"></div>
-   <div class="crosshair-banner" id="crosshairBanner" style="display:none">Click on route to place marker · ESC to cancel</div>
+  <div id="center-col">
+   <div id="map-container">
+    <div id="map"></div>
+    <div class="crosshair-banner" id="crosshairBanner" style="display:none">Click on route to place marker · ESC to cancel</div>
+   </div>
+   <div id="elev-strip" class="ns-scan">
+    <canvas id="elevChart"></canvas>
+   </div>
   </div>
   <div id="panel">
    <div class="panel-handle"></div>
@@ -85,14 +90,14 @@
     </div>
    </div>
    <div class="section">
-    <div class="section-title">Elevation Profile</div>
-    <div class="chart-wrap ns-scan"><canvas id="elevChart" style="width:100%;height:100%"></canvas></div>
-   </div>
-   <div class="section">
     <div class="export-bar">
      <span class="export-hint">Export climbs, kickers &amp; markers to your bike computer</span>
      <button class="btn btn-sm btn-primary" id="exportPanelBtn" style="padding:5px 12px;font-size:11px;white-space:nowrap">Export GPX</button>
     </div>
+   </div>
+   <div class="legend">
+    <span class="legend-item"><span class="legend-dot" style="background:var(--climb-green)"></span> climbs</span>
+    <span class="legend-item"><span class="legend-sq" style="background:var(--amber)"></span> kickers</span>
    </div>
    <div class="section">
     <div class="tabs">
@@ -120,6 +125,9 @@
     </div>
     <div class="marker-list" id="markerList"></div>
     </div>
+   </div>
+   <div class="mobile-footer">
+    built by Jacek · <a href="https://ko-fi.com/jacekkor" target="_blank">☕ buy me a coffee</a> · no account · no upload
    </div>
   </div>
  </div>
@@ -180,14 +188,14 @@
 </div>
 
 <!-- Toast -->
-<div class="toast" id="toast"></div>
+<div class="toast" id="toast" onclick="this.classList.remove('show')"></div>
 
 <script src="app.js"></script>
-<footer style="position:fixed;bottom:0;left:0;right:0;height:28px;background:var(--bg);border-top:1px solid var(--border);display:flex;align-items:center;justify-content:center;gap:12px;font-size:10px;color:var(--text-mute);z-index:10000;letter-spacing:0.08em;text-transform:uppercase">
+<footer class="site-footer">
  <span>built by Jacek</span>
- <span style="color:var(--border-hi)">&middot;</span>
- <a href="https://ko-fi.com/jacekkor" target="_blank" style="color:var(--accent);text-decoration:none">☕ buy me a coffee</a>
- <span style="color:var(--border-hi)">&middot;</span>
+ <span class="dot">&middot;</span>
+ <a href="https://ko-fi.com/jacekkor" target="_blank">☕ buy me a coffee</a>
+ <span class="dot">&middot;</span>
  <span>no account · no upload</span>
 </footer>
 </body>
