@@ -54,6 +54,8 @@ let state = {
 };
 
 let map, routeLayer, climbLayers=[], ascentLayers=[], markerLayers=[];
+let startFinishMarkers=[];
+let hitArea=null, scrubMarker=null, chartSampled=[], chartStep=1;
 let chart = null;
 let debounceTimer = null;
 let placingMarker = false;
@@ -210,12 +212,13 @@ function initMap(){
 
 function renderRoute(){
  if(routeLayer) map.removeLayer(routeLayer);
+ startFinishMarkers.forEach(m=>map.removeLayer(m));
+ startFinishMarkers=[];
  const latlngs=state.trackPoints.map(p=>[p.lat,p.lon]);
  routeLayer=L.polyline(latlngs,{color:'#00d4ff',weight:3,opacity:0.8,interactive:true}).addTo(map);
  // Invisible wide polyline for easier hover/click targeting
- if(window._hitArea) map.removeLayer(window._hitArea);
- const hitArea=L.polyline(latlngs,{color:'transparent',weight:20,opacity:0,interactive:true}).addTo(map);
- window._hitArea=hitArea;
+ if(hitArea) map.removeLayer(hitArea);
+ hitArea=L.polyline(latlngs,{color:'transparent',weight:20,opacity:0,interactive:true}).addTo(map);
  hitArea.bindTooltip('',{sticky:true,direction:'top',offset:[0,-10],className:'route-tooltip'});
  hitArea.on('mousemove',function(e){
   const pt=snapToRoute(e.latlng.lat,e.latlng.lng);
@@ -240,8 +243,9 @@ function renderRoute(){
  // Start/Finish markers
  const startIcon=L.divIcon({className:'',html:'<div style="width:12px;height:12px;background:#34d399;border-radius:50%;border:2px solid #fff"></div>',iconSize:[12,12],iconAnchor:[6,6]});
  const endIcon=L.divIcon({className:'',html:'<div style="width:12px;height:12px;background:#ef4444;border-radius:50%;border:2px solid #fff"></div>',iconSize:[12,12],iconAnchor:[6,6]});
- L.marker(latlngs[0],{icon:startIcon}).addTo(map).bindPopup('Start');
- L.marker(latlngs[latlngs.length-1],{icon:endIcon}).addTo(map).bindPopup('Finish');
+ const sm=L.marker(latlngs[0],{icon:startIcon}).addTo(map).bindPopup('Start');
+ const em=L.marker(latlngs[latlngs.length-1],{icon:endIcon}).addTo(map).bindPopup('Finish');
+ startFinishMarkers=[sm,em];
  if(state.mapView) map.setView(state.mapView.center,state.mapView.zoom);
  else map.fitBounds(routeLayer.getBounds(),{padding:[20,20]});
  map.on('moveend',()=>{state.mapView={center:map.getCenter(),zoom:map.getZoom()};saveState();});
@@ -254,14 +258,15 @@ function renderClimbsOnMap(){
   const col=climbColorHex(c.grad, c.length);
   const cat=categorizeClimb(c.length, c.grad);
   const catLabel=(getColorMode()==='pro'&&cat.cat)?' · '+cat.cat:'';
+  const tipText='Climb '+(i+1)+catLabel+' — '+(c.length/1000).toFixed(1)+'km · '+c.grad.toFixed(1)+'% · +'+Math.round(c.gain)+'m';
   const latlngs=state.trackPoints.slice(c.startIdx,c.endIdx+1).map(p=>[p.lat,p.lon]);
   const layer=L.polyline(latlngs,{color:col,weight:5,opacity:0.9,interactive:true}).addTo(map);
-  layer.bindTooltip('Climb '+(i+1)+catLabel+' — '+(c.length/1000).toFixed(1)+'km · '+c.grad.toFixed(1)+'% · +'+Math.round(c.gain)+'m',{sticky:true,direction:'top',offset:[0,-12],className:'route-tooltip'});
+  layer.bindTooltip(tipText,{sticky:true,direction:'top',offset:[0,-12],className:'route-tooltip'});
+  layer._climbIdx=i;
   (function(ci){layer.on('mouseover',()=>highlightFeature('climb',ci));layer.on('mouseout',()=>clearHighlight());})(i);
   climbLayers.push(layer);
   const icon=L.divIcon({className:'',html:'<div style="width:24px;height:24px;background:'+col+';border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#000;box-shadow:0 0 6px '+col+'80;border:2px solid rgba(255,255,255,0.3)">'+(i+1)+'</div>',iconSize:[24,24],iconAnchor:[12,12]});
   const marker=L.marker(latlngs[0],{icon}).addTo(map);
-  const tipText='Climb '+(i+1)+catLabel+' — '+(c.length/1000).toFixed(1)+'km · '+c.grad.toFixed(1)+'% · +'+Math.round(c.gain)+'m';
   marker.bindTooltip(tipText,{direction:'top',offset:[0,-14],className:'route-tooltip'});
   marker.bindPopup('<b>Climb '+(i+1)+catLabel+'</b><br>'+(c.length/1000).toFixed(1)+'km · '+c.grad.toFixed(1)+'% · +'+Math.round(c.gain)+'m');
   climbLayers.push(marker);
@@ -293,7 +298,7 @@ function renderMarkersOnMap(){
  state.markers.forEach(m=>{
   const icon=L.divIcon({className:'',html:`<div style="font-size:20px;filter:drop-shadow(0 2px 4px rgba(0,0,0,.5))">${MARKER_ICONS[m.type]||'📍'}</div>`,iconSize:[24,24],iconAnchor:[12,12]});
   const marker=L.marker([m.lat,m.lon],{icon}).addTo(map);
-  marker.bindPopup(`<b>${m.type}</b><br>${m.name||''}<br>${(m.dist/1000).toFixed(1)} km`);
+  marker.bindPopup('<b>'+escHtml(m.type)+'</b><br>'+escHtml(m.name||'')+'<br>'+(m.dist/1000).toFixed(1)+' km');
   markerLayers.push(marker);
  });
 }
@@ -306,11 +311,10 @@ const climbBandsPlugin={
   const ctx=chart.ctx;
   const xScale=chart.scales.x;
   const yScale=chart.scales.y;
-  const totalPts=state.trackPoints.length;
-  const sam=window._chartSampled||[];
+  const sam=chartSampled;
   function distToChartIdx(dist){
-   for(let j=0;j<sam.length;j++){if(sam[j].dist>=dist) return j;}
-   return sam.length-1;
+   for(let j=0;j<chartSampled.length;j++){if(chartSampled[j].dist>=dist) return j;}
+   return chartSampled.length-1;
   }
   // Draw climb bands
   if(state.climbs) state.climbs.forEach((c,i)=>{
@@ -347,8 +351,8 @@ function renderChart(){
  const step=Math.max(1,Math.floor(pts.length/500));
  const sampled=pts.filter((_,i)=>i%step===0||i===pts.length-1);
  // Store index mapping for band lookups
- window._chartSampled=sampled;
- window._chartStep=step;
+ chartSampled=sampled;
+ chartStep=step;
  const labels=sampled.map(p=>(p.dist/1000).toFixed(1));
  const data=sampled.map(p=>p.ele);
  if(chart) chart.destroy();
@@ -382,16 +386,16 @@ function renderChart(){
    onHover:function(event,elements){
     if(elements.length>0){
      const idx=elements[0].index;
-     const sam=window._chartSampled||state.trackPoints;
+     const sam=chartSampled.length?chartSampled:state.trackPoints;
      if(idx>=0&&idx<sam.length){
       const p=sam[idx];
       // Scrub marker on map
-      if(!window._scrubMarker){
+      if(!scrubMarker){
        const icon=L.divIcon({className:'',html:'<div style="width:10px;height:10px;background:#c8ff5a;border:2px solid #fff;border-radius:50%;box-shadow:0 0 12px rgba(200,255,90,0.8)"></div>',iconSize:[10,10],iconAnchor:[5,5]});
-       window._scrubMarker=L.marker([p.lat,p.lon],{icon,interactive:false,zIndexOffset:9999}).addTo(map);
+       scrubMarker=L.marker([p.lat,p.lon],{icon,interactive:false,zIndexOffset:9999}).addTo(map);
       } else {
-       window._scrubMarker.setLatLng([p.lat,p.lon]);
-       window._scrubMarker.setOpacity(1);
+       scrubMarker.setLatLng([p.lat,p.lon]);
+       scrubMarker.setOpacity(1);
       }
       // Check if cursor is over a kicker or climb band (kickers first — they're shorter and overlap)
       const curDist=p.dist;
@@ -407,7 +411,7 @@ function renderChart(){
       if(!found) clearHighlight();
      }
     } else {
-     if(window._scrubMarker) window._scrubMarker.setOpacity(0);
+     if(scrubMarker) scrubMarker.setOpacity(0);
      clearHighlight();
     }
    }
@@ -420,6 +424,13 @@ function renderChart(){
 // type: 'climb' or 'kicker', idx: index in state.climbs/ascents
 let _highlighted=null;
 
+function getPolylineForFeature(type, idx){
+ // Each feature has a polyline (even indices) and a marker (odd indices) in the layers array
+ const layers=type==='climb'?climbLayers:ascentLayers;
+ const layer=layers[idx*2];
+ return (layer&&layer.setStyle)?layer:null;
+}
+
 function highlightFeature(type, idx){
  if(_highlighted && _highlighted.type===type && _highlighted.idx===idx) return;
  clearHighlight();
@@ -428,9 +439,8 @@ function highlightFeature(type, idx){
  if(!item) return;
 
  // 1. Map: thicken the polyline
- const layers=type==='climb'?climbLayers:ascentLayers;
- const layer=layers[idx*2];
- if(layer&&layer.setStyle){
+ const layer=getPolylineForFeature(type,idx);
+ if(layer){
   if(type==='climb') layer.setStyle({weight:9,opacity:1});
   else layer.setStyle({weight:10,opacity:1});
  }
@@ -449,9 +459,8 @@ function clearHighlight(){
  const {type,idx}=_highlighted;
 
  // Map: restore
- const layers=type==='climb'?climbLayers:ascentLayers;
- const layer=layers[idx*2];
- if(layer&&layer.setStyle){
+ const layer=getPolylineForFeature(type,idx);
+ if(layer){
   if(type==='climb') layer.setStyle({weight:5,opacity:0.9});
   else layer.setStyle({weight:6,opacity:0.9,dashArray:'8 6'});
  }
@@ -473,7 +482,7 @@ function renderPanel(){
  for(let i=1;i<pts.length;i++){const d=pts[i].ele-pts[i-1].ele;if(d>0) totalGain+=d;}
  document.getElementById('statDist').textContent=(totalDist/1000).toFixed(1);
  document.getElementById('statGain').textContent=Math.round(totalGain);
- document.getElementById('routeName').innerHTML='<span class="punchy">punchy</span>AF / '+state.routeName;
+ document.getElementById('routeName').innerHTML='<span class="punchy">punchy</span>AF / '+escHtml(state.routeName);
  // Climb/kicker gain stats
  const climbGain=state.climbs.reduce((s,c)=>s+c.gain,0);
  const kickerGain=state.ascents.reduce((s,a)=>s+a.gain,0);
@@ -547,7 +556,7 @@ function renderMarkerList(){
  el.innerHTML=state.markers.map((m,i)=>`
   <div class="marker-item">
    <div class="marker-info">
-    <div class="marker-name">${MARKER_ICONS[m.type]||'📍'} ${m.type}${m.name?' - '+m.name:''}</div>
+    <div class="marker-name">${MARKER_ICONS[m.type]||'📍'} ${escHtml(m.type)}${m.name?' - '+escHtml(m.name):''}</div>
     <div class="marker-stats">${(m.dist/1000).toFixed(1)} km</div>
    </div>
    <div class="marker-actions">
@@ -563,7 +572,7 @@ function renderMarkerList(){
  });
 }
 
-// Process route
+// Process route: run analysis and render chart
 function processRoute(){
  reanalyze();
  renderChart();
@@ -577,7 +586,7 @@ function reanalyze(){
  renderPanel();
  renderMarkersOnMap();
  // Bring hit area to front so route tooltip still works over climb/kicker segments
- if(window._hitArea) window._hitArea.bringToFront();
+ if(hitArea) hitArea.bringToFront();
  saveState();
 }
 
@@ -633,8 +642,16 @@ function loadState(){
  try{
   const s=JSON.parse(localStorage.getItem('routeAnalyzer'));
   if(!s) return false;
-  if(s.settings) state.settings=s.settings;
-  if(s.markers) state.markers=s.markers;
+  if(s.settings){
+   // Validate numeric settings before applying
+   const validated={...DEFAULT_SETTINGS};
+   SETTING_KEYS.forEach(key=>{
+    const v=parseFloat(s.settings[key]);
+    if(!isNaN(v)&&isFinite(v)) validated[key]=v;
+   });
+   state.settings=validated;
+  }
+  if(s.markers&&Array.isArray(s.markers)) state.markers=s.markers;
   if(s.mapView) state.mapView=s.mapView;
   if(s.routeName) state.routeName=s.routeName;
   // Apply settings to sliders
@@ -717,10 +734,13 @@ function exportMarkers(){
  download(JSON.stringify(state.markers,null,2),state.routeName+'_markers.json','application/json');
 }
 
-function escXml(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function escXml(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function escHtml(s){return escXml(s);}
 function download(content,name,type){
  const blob=new Blob([content],{type});
- const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();URL.revokeObjectURL(a.href);
+ const url=URL.createObjectURL(blob);
+ const a=document.createElement('a');a.href=url;a.download=name;a.click();
+ setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
 
 // Markers
@@ -853,17 +873,7 @@ document.addEventListener('DOMContentLoaded',()=>{
  document.getElementById('markerPanelConfirm').addEventListener('click',()=>{
   const km=parseFloat(document.getElementById('markerKmPanelInput').value);
   const type=document.getElementById('markerTypePanelSelect').value;
-  if(isNaN(km)||km<0){toast('Enter a valid km value');return;}
-  const totalKm=state.trackPoints[state.trackPoints.length-1].dist/1000;
-  if(km>totalKm){toast('km exceeds route length ('+totalKm.toFixed(1)+' km)');return;}
-  const targetDist=km*1000;
-  let closest=state.trackPoints[0],minDiff=Infinity;
-  state.trackPoints.forEach(p=>{const d=Math.abs(p.dist-targetDist);if(d<minDiff){minDiff=d;closest=p;}});
-  state.markers.push({lat:closest.lat,lon:closest.lon,dist:closest.dist,type,name:''});
-  state.markers.sort((a,b)=>a.dist-b.dist);
-  saveState();renderMarkerList();renderMarkersOnMap();
-  document.getElementById('markerKmPanelInput').value='';
-  toast(type+' added at km '+km.toFixed(1));
+  addMarkerAtKmValue(km, type, document.getElementById('markerKmPanelInput'));
  });
  document.getElementById('markerPanelMapClick').addEventListener('click',()=>{
   document.getElementById('markerAddPanel').style.display='none';
