@@ -165,8 +165,7 @@ async function castVote(slug){
       headers:{ 'content-type':'application/json' },
       body: JSON.stringify({ slug }),
     });
-    // 409 = already voted recently; server still returns current tallies.
-    if(res.ok || res.status === 409){
+    if(res.ok){
       const data = await res.json();
       try{ localStorage.setItem(VOTED_KEY, slug); }catch{}
       renderResults(data);

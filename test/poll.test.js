@@ -1,13 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import {
-  isValidSlug,
-  pct,
-  buildResponse,
-  isThrottled,
-  hashIp,
-  THROTTLE_SECONDS,
-  SLUGS,
-} from '../shared/poll.js';
+import { isValidSlug, pct, buildResponse, SLUGS } from '../shared/poll.js';
 
 describe('isValidSlug', () => {
   it('accepts the four seeded slugs', () => {
@@ -70,34 +62,5 @@ describe('buildResponse', () => {
       'kaszanka',
       'watrobka',
     ]);
-  });
-});
-
-describe('isThrottled', () => {
-  const now = 1_000_000;
-  it('is false when there is no prior vote', () => {
-    expect(isThrottled(null, now)).toBe(false);
-    expect(isThrottled(undefined, now)).toBe(false);
-  });
-  it('is true within the window', () => {
-    expect(isThrottled(now - 60, now)).toBe(true);
-    expect(isThrottled(now - (THROTTLE_SECONDS - 1), now)).toBe(true);
-  });
-  it('is false once the window has passed', () => {
-    expect(isThrottled(now - THROTTLE_SECONDS, now)).toBe(false);
-    expect(isThrottled(now - (THROTTLE_SECONDS + 1), now)).toBe(false);
-  });
-});
-
-describe('hashIp', () => {
-  it('produces a stable 64-char hex digest', async () => {
-    const h = await hashIp('203.0.113.7', 'salt');
-    expect(h).toMatch(/^[0-9a-f]{64}$/);
-    expect(await hashIp('203.0.113.7', 'salt')).toBe(h);
-  });
-  it('differs by ip and by salt', async () => {
-    const a = await hashIp('203.0.113.7', 'salt');
-    expect(await hashIp('203.0.113.8', 'salt')).not.toBe(a);
-    expect(await hashIp('203.0.113.7', 'pepper')).not.toBe(a);
   });
 });

@@ -8,11 +8,6 @@ CREATE TABLE IF NOT EXISTS dishes (
   count INTEGER NOT NULL DEFAULT 0
 );
 
-CREATE TABLE IF NOT EXISTS voters (
-  ip_hash TEXT PRIMARY KEY,
-  ts      INTEGER NOT NULL          -- unix seconds of last accepted vote
-);
-
 INSERT OR IGNORE INTO dishes (slug, label, emoji, count) VALUES
   ('kaszanka', 'kaszanka', '🩸', 0),
   ('czernina', 'czernina', '🦆', 0),

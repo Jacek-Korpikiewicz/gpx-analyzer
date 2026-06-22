@@ -1,7 +1,12 @@
 # punchyaf.cc/food-fight — Polish Food Fight Poll
 
 **Date:** 2026-06-22
-**Status:** Approved design, pending implementation plan
+**Status:** Implemented.
+
+> **Amendment (2026-06-22):** the server-side hashed-IP throttle was **removed**
+> after review — on shared/CGNAT IPs it suppressed legitimate votes. The
+> `voters` table, IP hashing, and the 6h-window/409 logic described below are
+> superseded; abuse prevention is now the client-side localStorage flag only.
 
 ## Summary
 

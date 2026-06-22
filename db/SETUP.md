@@ -51,6 +51,5 @@ npx wrangler pages dev --port 8788                         # serve + functions
 ## Resetting counts
 
 ```bash
-npx wrangler d1 execute foodfight --remote --command \
-  "UPDATE dishes SET count = 0; DELETE FROM voters;"
+npx wrangler d1 execute foodfight --remote --command "UPDATE dishes SET count = 0;"
 ```
